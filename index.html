@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小鱼骨 - GIS工作目录设置</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft Yahei", sans-serif;
+        }
+        body {
+            background: #f5f7fa;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        .current-ws {
+            background: #e8f4f8;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            color: #2980b9;
+            font-size: 16px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #34495e;
+            font-weight: 500;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #2980b9;
+            transform: translateY(-1px);
+        }
+        .tip {
+            margin-top: 20px;
+            color: #7f8c8d;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .success {
+            margin-top: 15px;
+            padding: 12px;
+            background: #d4edda;
+            color: #155724;
+            border-radius: 8px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🐟 小鱼骨 - GIS工作目录设置</h1>
+
+        <div class="current-ws">
+            当前工作目录：<strong>{{ current_workspace }}</strong>
+        </div>
+
+        <form id="wsForm">
+            <div class="input-group">
+                <label>粘贴你的ArcGIS工作目录路径：</label>
+                <input type="text" id="workspaceInput" placeholder="例如：D:\ArcGIS++\Arcpy_Practice\Test_Two" required>
+            </div>
+            <button type="submit">一键设置工作目录</button>
+        </form>
+
+        <div class="success" id="successMsg">✅ 工作目录设置成功！AI现在可以识别你的工作环境了</div>
+
+        <div class="tip">
+            💡 使用说明：
+            <br>1. 直接从电脑文件夹地址栏复制路径，粘贴到输入框
+            <br>2. 点击按钮一键设置，AI会自动记住这个目录
+            <br>3. 设置完成后，就可以去AI对话界面生成GIS代码了
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('wsForm');
+        const successMsg = document.getElementById('successMsg');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const workspace = document.getElementById('workspaceInput').value;
+
+            // 发送请求设置路径
+            const response = await fetch('/api/set_workspace', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `workspace=${encodeURIComponent(workspace)}`
+            });
+
+            const result = await response.json();
+            if (result.status === 'success') {
+                successMsg.style.display = 'block';
+                setTimeout(() => {
+                    location.reload(); // 刷新页面，更新当前目录显示
+                }, 1500);
+            }
+        });
+    </script>
+</body>
+</html>
