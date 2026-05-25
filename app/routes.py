@@ -3,7 +3,8 @@
 FastAPI 应用实例在此创建，所有 HTTP 路由在此注册
 """
 import threading
-from fastapi import FastAPI
+import time as _time
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -13,6 +14,16 @@ from .templates import render_home_page, render_chat_page
 
 # ── FastAPI 应用实例 ──────────────────────────────────────────────────
 app = FastAPI(title="小鱼骨GIS助手")
+
+# ── 请求耗时中间件 ────────────────────────────────────────────────────
+
+@app.middleware("http")
+async def _log_request_time(request: Request, call_next):
+    start = _time.time()
+    response = await call_next(request)
+    elapsed = _time.time() - start
+    print(f"[接口总耗时] {request.url.path}: {elapsed:.2f}s")
+    return response
 
 # ── 工作空间状态（线程安全） ──────────────────────────────────────────
 arcgis_workspace = ""

@@ -4,6 +4,7 @@
 注意：本模块不导入 arcpy，不感知子进程细节
 """
 import json
+import time as _time
 from .config import client, OLLAMA_MODEL, OLLAMA_BASE_URL
 from .tool_registry import TOOLS
 
@@ -14,32 +15,46 @@ _SYSTEM_PROMPT_TEMPLATE = """【小鱼骨项目强制执行规则 — 违反任�
 【工具调用格式铁律】
 铁律1: 调用工具时只输出纯JSON {{"name": "工具名", "arguments": {{"参数名": "参数值"}}}}，一个字不能多
 铁律2: 禁止输出```、```json、<tool_call>、markdown等任何标签或包装
-铁律3: 禁止在JSON前后加解释、说明、问候语、换行
+铁律3: 禁止在JSON前后加解释、说明、问候语、多余换行
 铁律4: 参数值中的路径统一使用正斜杠 /，禁止反斜杠
-铁律5: 工具参数严格按照工具定义传入，禁止瞎改参数名或参数值
+铁律5: 工具参数严格按照工具定义传入，禁止篡改参数名、随意赋值
+
+【多任务解析与执行铁律】
+铁律6: 自动拆分连续多条自然语言指令，梳理先后执行次序
+铁律7: 主动识别任务前后依赖关系，前置任务未完成不得执行后续依赖任务
+铁律8: 任务相互隔离，变量、文件、空间状态互不干扰，杜绝任务数据混杂错乱
+铁律9: 逐条校验单任务合法性，参数缺失、要素不存在等问题自动识别标记
+
+【任务结果总结铁律】
+铁律10: 全部任务执行结束后，自动汇总整体执行情况
+铁律11: 统计总任务数量、成功数量、失败数量，逐条罗列任务执行结果
+铁律12: 标注失败任务，清晰写明报错诱因，同步给出简易修正方向
+铁律13: 整理规整问题清单，条理分明呈现内容，避免信息混乱交织
 
 【GIS操作行为铁律】
-铁律6: 所有GIS操作必须调用对应工具，禁止自己写ArcPy代码
-铁律7: 创建要素类必须调用 Create_Element 工具，禁止自己写 CreateFeatureclass 代码
-铁律8: 要素类名称必须是纯名称（如 roads），绝对不能加 .shp 后缀（禁止 roads.shp）
-铁律9: GDB 地理数据库名称必须是纯名称（如 MyProject），工具会自动加 .gdb 后缀
-铁律10: 创建成功后必须调用 Describe_GDB 或 list_files_in_workspace 工具验证，禁止凭空编造结果
-铁律11: 当用户只给文件夹名称（如"Data文件夹"）而非完整路径时，必须先调用 get_current_workspace 获取工作目录，再调用 Tree_List 或 list_files_in_workspace 查找目标，然后拼接完整路径（工作目录 + 文件夹名）传入工具。禁止在未确认路径的情况下直接猜测
+铁律14: 所有GIS操作必须调用对应工具，禁止自行编写ArcPy代码
+铁律15: 创建要素类必须调用 Create_Element 工具，禁止自行调用CreateFeatureclass相关逻辑
+铁律16: 要素类名称仅填写纯名称，禁止附带.shp后缀
+铁律17: GDB地理数据库仅填写纯名称，工具自动补充.gdb后缀
+铁律18: 创建操作完成后，必须调用Describe_GDB或list_files_in_workspace核验结果，严禁虚构执行状态
+铁律19: 仅获取文件夹名称无完整路径时，先调用get_current_workspace获取目录，检索拼接完整路径后再传参，禁止主观猜测路径
 
 【当前环境】
 当前工作目录：{workspace}
-你是小鱼骨GIS助手，回答简洁专业。不要凭空猜测目录内容，优先调用工具获取实际信息。
+你是小鱼骨GIS助手，回答简洁专业。不凭空判定目录内容，优先调用工具获取真实数据。
 
 【可用工具及调用示例】
 {tools_desc}"""
 
 
-def build_tools_prompt() -> str:
-    """把 TOOLS 列表转成 AI 可读的格式描述文本"""
-    examples = {
-        "get_current_workspace": '{"name": "get_current_workspace", "arguments": {}}',
-        "list_files_in_workspace": '{"name": "list_files_in_workspace", "arguments": {}}',
-    }
+# ── 工具描述预渲染（服务启动时执行一次，避免每次请求重算） ──────────
+_TOOL_EXAMPLES = {
+    "get_current_workspace": '{"name": "get_current_workspace", "arguments": {}}',
+    "list_files_in_workspace": '{"name": "list_files_in_workspace", "arguments": {}}',
+}
+
+def _build_tools_desc() -> str:
+    """遍历 TOOLS 列表生成 AI 可读文本（仅模块加载时调用一次）"""
     lines = []
     for tool in TOOLS:
         params_desc = []
@@ -47,19 +62,19 @@ def build_tools_prompt() -> str:
             req_mark = "必填" if p.required else "可选"
             params_desc.append(f"    {p.name}({p.type},{req_mark}): {p.description}")
         param_text = "\n".join(params_desc) if params_desc else "    无参数"
-
-        example = examples.get(tool.name, "")
+        example = _TOOL_EXAMPLES.get(tool.name, "")
         lines.append(f"- {tool.name}: {tool.description}\n  参数:\n{param_text}")
         if example:
             lines.append(f"  调用示例: {example}")
     return "\n".join(lines)
 
+_TOOLS_DESC_CACHE = _build_tools_desc()  # 启动时预渲染一次
 
 def build_system_prompt(workspace: str) -> str:
-    """构建完整的系统提示词"""
+    """构建完整系统提示词：.format() 处理模板中的 {{}}，工具描述的 {} 不受影响"""
     return _SYSTEM_PROMPT_TEMPLATE.format(
         workspace=workspace,
-        tools_desc=build_tools_prompt()
+        tools_desc=_TOOLS_DESC_CACHE,
     )
 
 
@@ -146,77 +161,141 @@ def _clean_history(history: list) -> list:
     return cleaned
 
 
-def _extract_progress(messages: list) -> str:
-    """从历史消息中提取已创建的 GIS 对象路径"""
-    paths = []
-    for msg in messages:
-        if msg["role"] != "user":
-            continue
-        for line in msg.get("content", "").split("\n"):
-            line_s = line.strip()
-            if "完整路径:" in line_s:
-                p = line_s.split("完整路径:", 1)[-1].strip()
-                if p and p not in paths:
-                    paths.append(p)
-    return "\n".join(f"  [{i+1}] {p}" for i, p in enumerate(paths)) if paths else ""
-
-
-# ── 单任务工具调用循环 ──────────────────────────────────────────────────
+# ── 单任务工具调用循环 ──────────────────────────────────────────────────# ── 单任务工具调用循环 ──────────────────────────────────────────────────
 
 def _run_one_task(
     task_prompt: str,
     messages: list,
     workspace: str,
     execute_tool_fn,
-    is_last: bool = True,
 ) -> str:
     """
-    执行单个子任务的 AI+工具调用循环（最多 3 轮工具调用）。
-    返回 AI 的最终文本回答。
+    执行单个子任务：一次 Ollama 推理 → 解析工具调用 → 执行 → AI 润色回复。
     """
-    # 注入前序步骤的进度
-    progress = _extract_progress(messages)
-    full_prompt = task_prompt
-    if progress:
-        full_prompt = (
-            f"{task_prompt}\n\n[前面步骤已完成的 GIS 对象]\n{progress}\n"
-            "请基于以上已有对象继续操作，无需重复创建。"
-        )
+    messages.append({"role": "user", "content": task_prompt})
 
-    messages.append({"role": "user", "content": full_prompt})
-
-    for _ in range(3):
-        response = client.chat.completions.create(
-            model=OLLAMA_MODEL, messages=messages, temperature=0.1
-        )
-        ai_text = response.choices[0].message.content.strip()
-
-        tool_call = parse_tool_call(ai_text)
-        if tool_call is None:
-            return ai_text
-
-        tool_name = tool_call.get("name", "")
-        tool_args = tool_call.get("arguments", {})
-        if not isinstance(tool_args, dict):
-            tool_args = {}
-
-        result = execute_tool_fn(tool_name, tool_args, workspace)
-
-        messages.append({"role": "assistant", "content": ai_text})
-        messages.append({
-            "role": "user",
-            "content": (
-                f"工具执行结果：\n{result}\n\n请继续。"
-                if not is_last else
-                f"工具执行结果：\n{result}\n\n请根据这个结果直接回答用户的问题，不要再调用工具。"
-            )
-        })
-
-    # 兜底
+    # ── Ollama 推理 ──
+    t0 = _time.time()
     response = client.chat.completions.create(
         model=OLLAMA_MODEL, messages=messages, temperature=0.1
     )
+    ai_text = response.choices[0].message.content.strip()
+    print(f"[Ollama推理耗时] {_time.time() - t0:.2f}s")
+
+    tool_call = parse_tool_call(ai_text)
+    if tool_call is None:
+        return ai_text
+
+    # ── 执行工具 ──
+    tool_name = tool_call.get("name", "")
+    tool_args = tool_call.get("arguments", {})
+    if not isinstance(tool_args, dict):
+        tool_args = {}
+
+    result = execute_tool_fn(tool_name, tool_args, workspace)
+
+    messages.append({"role": "assistant", "content": ai_text})
+
+    # ── 把工具结果送给 AI 做润色回复 ──
+    messages.append({
+        "role": "user",
+        "content": f"工具执行结果：\n{result}\n\n请根据这个结果直接回答用户的问题，不要再调用工具。"
+    })
+
+    t1 = _time.time()
+    response = client.chat.completions.create(
+        model=OLLAMA_MODEL, messages=messages, temperature=0.1
+    )
+    print(f"[Ollama推理耗时] {_time.time() - t1:.2f}s")
     return response.choices[0].message.content
+
+
+# ── 任务调度器 ────────────────────────────────────────────────────────
+
+class TaskScheduler:
+    """多任务调度器：依赖校验 → 原子执行 → 失败重试 → 状态汇总"""
+
+    def __init__(self, workspace: str, execute_tool_fn):
+        self._tasks: list[dict] = []
+        self._status: dict[str, str] = {}    # task_id → waiting|running|success|failed|retry
+        self._results: dict[str, str] = {}   # task_id → answer text
+        self._workspace = workspace
+        self._execute = execute_tool_fn
+        self._max_retries = 2
+
+    @property
+    def task_count(self) -> int:
+        return len(self._tasks)
+
+    def add(self, task_id: str, prompt: str) -> None:
+        """注册一个子任务"""
+        self._tasks.append({"id": task_id, "prompt": prompt})
+        self._status[task_id] = "等待中"
+
+    def run(self, messages: list) -> str:
+        """
+        顺序执行全部任务。
+        - 每个任务执行前校验前置依赖（前序任务必须全部成功）
+        - 失败自动重试（最多 self._max_retries 次）
+        - 原子隔离：任务间通过 messages 共享进度，异常不污染后续
+        返回汇总报告字符串。
+        """
+        for i, task in enumerate(self._tasks):
+            tid = task["id"]
+
+            # ── 依赖校验：前序任务是否全部成功 ──
+            for j in range(i):
+                prev_id = self._tasks[j]["id"]
+                if self._status[prev_id] != "成功":
+                    self._status[tid] = "失败"
+                    self._results[tid] = f"前置任务 [{prev_id}] 未成功，跳过执行"
+                    continue
+
+            if self._status[tid] == "失败":
+                continue  # 依赖校验未通过
+
+            # ── 执行 + 重试 ──
+            self._status[tid] = "执行中"
+            for attempt in range(self._max_retries + 1):
+                try:
+                    ans = _run_one_task(
+                        task["prompt"], messages,
+                        self._workspace, self._execute,
+                    )
+                    self._status[tid] = "成功"
+                    self._results[tid] = ans
+                    break
+                except Exception as e:
+                    if attempt < self._max_retries:
+                        self._status[tid] = f"重试 {attempt+1}/{self._max_retries}"
+                    else:
+                        self._status[tid] = "失败"
+                        self._results[tid] = f"重试 {self._max_retries} 次后仍失败：{e}"
+
+        return self._build_summary()
+
+    def _build_summary(self) -> str:
+        """生成带状态图标的汇总报告"""
+        icons = {"成功": "[OK]", "失败": "[FAIL]", "等待中": "[...]", "执行中": "[...]"}
+        lines = [f"任务执行汇总（共 {len(self._tasks)} 项）", ""]
+        success_count = 0
+        fail_count = 0
+        for task in self._tasks:
+            tid = task["id"]
+            st = self._status[tid]
+            icon = icons.get(st, "[...]")
+            if "重试" in st:
+                icon = "[RETRY]"
+            prompt_preview = task["prompt"][:50]
+            lines.append(f"  {icon} {tid}: {prompt_preview}")
+            if st == "成功":
+                success_count += 1
+            elif st == "失败":
+                fail_count += 1
+                lines.append(f"       原因: {self._results.get(tid, '未知')[:80]}")
+        lines.append("")
+        lines.append(f"成功 {success_count} / 失败 {fail_count}")
+        return "\n".join(lines)
 
 
 # ── 对话处理入口 ──────────────────────────────────────────────────────
@@ -224,7 +303,7 @@ def _run_one_task(
 def process_chat(prompt: str, history: list, workspace: str,
                  execute_tool_fn) -> dict:
     """
-    处理一轮对话。自动拆分多任务输入，逐个执行。
+    处理一轮对话。自动拆分多任务输入，TaskScheduler 调度执行。
     返回 {"answer": str, "current_workspace": str} 或 {"error": str}
     """
     try:
@@ -234,26 +313,17 @@ def process_chat(prompt: str, history: list, workspace: str,
         messages = [{"role": "system", "content": system_content}]
         messages.extend(_clean_history(history))
 
-        # 单任务：原行为不变
+        # 单任务：直接执行
         if len(tasks) == 1:
             answer = _run_one_task(tasks[0], messages, workspace, execute_tool_fn)
             return {"answer": answer, "current_workspace": workspace}
 
-        # 多任务：逐个执行，进度自动传递
-        answers = []
+        # 多任务：调度器接管
+        scheduler = TaskScheduler(workspace, execute_tool_fn)
         for i, task in enumerate(tasks):
-            is_last = (i == len(tasks) - 1)
-            ans = _run_one_task(task, messages, workspace, execute_tool_fn, is_last)
-            answers.append(ans)
-
-        summary = "\n".join(
-            f"{i+1}. {task} → {ans}"
-            for i, (task, ans) in enumerate(zip(tasks, answers))
-        )
-        return {
-            "answer": f"全部 {len(tasks)} 个任务执行完毕：\n{summary}",
-            "current_workspace": workspace,
-        }
+            scheduler.add(f"T{i+1}", task)
+        summary = scheduler.run(messages)
+        return {"answer": summary, "current_workspace": workspace}
 
     except Exception as e:
         err_msg = str(e)
