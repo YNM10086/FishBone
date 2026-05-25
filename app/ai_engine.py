@@ -119,57 +119,141 @@ def parse_tool_call(text: str) -> dict | None:
     return None
 
 
+# ── 任务拆分与上下文管理 ────────────────────────────────────────────────
+
+import re as _re
+
+# 分隔符：中文逗号/句号/顿号/分号 + 英文逗号/分号 + 换行
+_TASK_SEP = _re.compile(r'[，,。、；;\n]+')
+
+
+def _split_tasks(prompt: str) -> list[str]:
+    """按中英文标点拆分用户输入为独立子任务列表"""
+    parts = _TASK_SEP.split(prompt)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _clean_history(history: list) -> list:
+    """只保留系统消息和工具执行结果，丢弃旧用户指令防止窜扰"""
+    cleaned = []
+    for msg in history:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role == "system":
+            cleaned.append(msg)
+        elif role == "user" and content.startswith("工具执行结果"):
+            cleaned.append(msg)
+    return cleaned
+
+
+def _extract_progress(messages: list) -> str:
+    """从历史消息中提取已创建的 GIS 对象路径"""
+    paths = []
+    for msg in messages:
+        if msg["role"] != "user":
+            continue
+        for line in msg.get("content", "").split("\n"):
+            line_s = line.strip()
+            if "完整路径:" in line_s:
+                p = line_s.split("完整路径:", 1)[-1].strip()
+                if p and p not in paths:
+                    paths.append(p)
+    return "\n".join(f"  [{i+1}] {p}" for i, p in enumerate(paths)) if paths else ""
+
+
+# ── 单任务工具调用循环 ──────────────────────────────────────────────────
+
+def _run_one_task(
+    task_prompt: str,
+    messages: list,
+    workspace: str,
+    execute_tool_fn,
+    is_last: bool = True,
+) -> str:
+    """
+    执行单个子任务的 AI+工具调用循环（最多 3 轮工具调用）。
+    返回 AI 的最终文本回答。
+    """
+    # 注入前序步骤的进度
+    progress = _extract_progress(messages)
+    full_prompt = task_prompt
+    if progress:
+        full_prompt = (
+            f"{task_prompt}\n\n[前面步骤已完成的 GIS 对象]\n{progress}\n"
+            "请基于以上已有对象继续操作，无需重复创建。"
+        )
+
+    messages.append({"role": "user", "content": full_prompt})
+
+    for _ in range(3):
+        response = client.chat.completions.create(
+            model=OLLAMA_MODEL, messages=messages, temperature=0.1
+        )
+        ai_text = response.choices[0].message.content.strip()
+
+        tool_call = parse_tool_call(ai_text)
+        if tool_call is None:
+            return ai_text
+
+        tool_name = tool_call.get("name", "")
+        tool_args = tool_call.get("arguments", {})
+        if not isinstance(tool_args, dict):
+            tool_args = {}
+
+        result = execute_tool_fn(tool_name, tool_args, workspace)
+
+        messages.append({"role": "assistant", "content": ai_text})
+        messages.append({
+            "role": "user",
+            "content": (
+                f"工具执行结果：\n{result}\n\n请继续。"
+                if not is_last else
+                f"工具执行结果：\n{result}\n\n请根据这个结果直接回答用户的问题，不要再调用工具。"
+            )
+        })
+
+    # 兜底
+    response = client.chat.completions.create(
+        model=OLLAMA_MODEL, messages=messages, temperature=0.1
+    )
+    return response.choices[0].message.content
+
+
 # ── 对话处理入口 ──────────────────────────────────────────────────────
 
 def process_chat(prompt: str, history: list, workspace: str,
                  execute_tool_fn) -> dict:
     """
-    处理一轮对话，返回 {"answer": str, "current_workspace": str} 或 {"error": str}
-    execute_tool_fn: (name, args, workspace) -> str
+    处理一轮对话。自动拆分多任务输入，逐个执行。
+    返回 {"answer": str, "current_workspace": str} 或 {"error": str}
     """
     try:
         system_content = build_system_prompt(workspace)
+        tasks = _split_tasks(prompt)
 
         messages = [{"role": "system", "content": system_content}]
-        messages.extend(history)
-        messages.append({"role": "user", "content": prompt})
+        messages.extend(_clean_history(history))
 
-        # 工具调用循环（最多 3 轮）
-        for _ in range(3):
-            response = client.chat.completions.create(
-                model=OLLAMA_MODEL,
-                messages=messages,
-                temperature=0.1
-            )
-            ai_text = response.choices[0].message.content.strip()
+        # 单任务：原行为不变
+        if len(tasks) == 1:
+            answer = _run_one_task(tasks[0], messages, workspace, execute_tool_fn)
+            return {"answer": answer, "current_workspace": workspace}
 
-            tool_call = parse_tool_call(ai_text)
-            if tool_call is None:
-                return {"answer": ai_text, "current_workspace": workspace}
+        # 多任务：逐个执行，进度自动传递
+        answers = []
+        for i, task in enumerate(tasks):
+            is_last = (i == len(tasks) - 1)
+            ans = _run_one_task(task, messages, workspace, execute_tool_fn, is_last)
+            answers.append(ans)
 
-            tool_name = tool_call.get("name", "")
-            tool_args = tool_call.get("arguments", {})
-            if not isinstance(tool_args, dict):
-                tool_args = {}
-
-            result = execute_tool_fn(tool_name, tool_args, workspace)
-
-            messages.append({"role": "assistant", "content": ai_text})
-            messages.append({
-                "role": "user",
-                "content": (
-                    f"工具执行结果：\n{result}\n\n"
-                    "请根据这个结果直接回答用户的问题，不要再调用工具。"
-                )
-            })
-
-        # 兜底：循环耗尽后强制 AI 直接回答
-        response = client.chat.completions.create(
-            model=OLLAMA_MODEL,
-            messages=messages,
-            temperature=0.1
+        summary = "\n".join(
+            f"{i+1}. {task} → {ans}"
+            for i, (task, ans) in enumerate(zip(tasks, answers))
         )
-        return {"answer": response.choices[0].message.content, "current_workspace": workspace}
+        return {
+            "answer": f"全部 {len(tasks)} 个任务执行完毕：\n{summary}",
+            "current_workspace": workspace,
+        }
 
     except Exception as e:
         err_msg = str(e)

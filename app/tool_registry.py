@@ -208,6 +208,19 @@ TOOLS: list[Tool] = [
         ],
         handler=_delete_file,
     ),
+    Tool(
+        name="Field_Edit",
+        description="对要素类或表的属性字段进行增删改查。action: list(列出所有字段)/add(添加字段)/delete(删除字段)/alias(修改字段别名)",
+        params=[
+            Param("feature_class", "string", "要素类或表的完整路径", required=True),
+            Param("action", "string", "操作类型：list/add/delete/alias", required=True),
+            Param("field_name", "string", "字段名称（add/delete/alias 操作需要）"),
+            Param("field_type", "string", "字段类型（add 操作）：TEXT/FLOAT/DOUBLE/SHORT/LONG/DATE，默认 TEXT"),
+            Param("field_length", "integer", "字段长度（add 操作），默认 254"),
+            Param("new_alias", "string", "新别名（alias 操作需要）"),
+        ],
+        handler="data_process/filed",
+    ),
 ]
 
 # ── 名称索引（import 时自动构建） ─────────────────────────────────────
