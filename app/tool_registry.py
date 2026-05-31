@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 from .runner import call_script
 from scripts.file_tool.tree_list import run as _tree_list
-from scripts.file_tool.delete_file import run as _delete_file
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -206,7 +205,7 @@ TOOLS: list[Tool] = [
         params=[
             Param("target_path", "string", "要删除的文件或文件夹完整路径，如 D:/Data/MyProject.gdb", required=True),
         ],
-        handler=_delete_file,
+        handler="file_tool/delete_file",
     ),
     Tool(
         name="Field_Edit",

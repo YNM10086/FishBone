@@ -38,10 +38,12 @@ _SYSTEM_PROMPT_TEMPLATE = """【小鱼骨项目强制执行规则 — 违反任�
 铁律17: GDB地理数据库仅填写纯名称，工具自动补充.gdb后缀
 铁律18: 创建操作完成后，必须调用Describe_GDB或list_files_in_workspace核验结果，严禁虚构执行状态
 铁律19: 仅获取文件夹名称无完整路径时，先调用get_current_workspace获取目录，检索拼接完整路径后再传参，禁止主观猜测路径
+铁律20: 所有对象名称（文件名、要素类名、数据集名、字段名）必须原样匹配用户输入，禁止中英文自动翻译互通。用户说"城市"就只能找"城市"，绝不能找"City"；用户说"roads"就只能找"roads"，绝不能找"道路"
+铁律21: 当优先参考路径已设置且用户只给对象名称不给出完整路径时，严格三步执行：第1步调用 Tree_List 或 list_files_in_workspace 扫描优先参考路径；第2步在扫描结果中定位与用户名称完全一致的目标；第3步补齐完整路径后执行操作。三步缺一不可，严禁跳过扫描直接编造路径
 
 【当前环境】
 当前工作目录：{workspace}
-你是小鱼骨GIS助手，回答简洁专业。不凭空判定目录内容，优先调用工具获取真实数据。
+{focus_path}你是小鱼骨GIS助手，回答简洁专业。不凭空判定目录内容，优先调用工具获取真实数据。
 
 【可用工具及调用示例】
 {tools_desc}"""
@@ -70,10 +72,15 @@ def _build_tools_desc() -> str:
 
 _TOOLS_DESC_CACHE = _build_tools_desc()  # 启动时预渲染一次
 
-def build_system_prompt(workspace: str) -> str:
-    """构建完整系统提示词：.format() 处理模板中的 {{}}，工具描述的 {} 不受影响"""
+def build_system_prompt(workspace: str, focus_path: str = "") -> str:
+    """构建完整系统提示词"""
+    fp = (
+        f"当前优先参考路径：{focus_path}\n"
+        "（用户只给名称时，必须先扫描此目录找到对象补齐完整路径，再操作）\n"
+    ) if focus_path else ""
     return _SYSTEM_PROMPT_TEMPLATE.format(
         workspace=workspace,
+        focus_path=fp,
         tools_desc=_TOOLS_DESC_CACHE,
     )
 
@@ -140,6 +147,31 @@ import re as _re
 
 # 分隔符：中文逗号/句号/顿号/分号 + 英文逗号/分号 + 换行
 _TASK_SEP = _re.compile(r'[，,。、；;\n]+')
+
+# 会话级优先参考路径
+_FOCUS_PATH = ""
+_WIN_PATH_RE = _re.compile(r'[A-Za-z]:[/\\][^\s,，。、；;]+')
+
+
+def _extract_focus_path(prompt: str) -> str:
+    """从用户输入中提取绝对路径，找到 .gdb 之前的部分作为优先参考路径"""
+    paths = _WIN_PATH_RE.findall(prompt)
+    if not paths:
+        return ""
+    raw = paths[0].replace("\\", "/")
+    parts = [p for p in raw.split("/") if p]
+    if len(parts) < 2:
+        return ""
+    # 从右往左定位 .gdb
+    gdb_idx = -1
+    for i in range(len(parts) - 1, -1, -1):
+        if ".gdb" in parts[i].lower():
+            gdb_idx = i
+            break
+    if gdb_idx <= 0:
+        return ""
+    # .gdb 之前的部分即为优先参考路径
+    return "/".join(parts[:gdb_idx])
 
 
 def _split_tasks(prompt: str) -> list[str]:
@@ -306,8 +338,13 @@ def process_chat(prompt: str, history: list, workspace: str,
     处理一轮对话。自动拆分多任务输入，TaskScheduler 调度执行。
     返回 {"answer": str, "current_workspace": str} 或 {"error": str}
     """
+    global _FOCUS_PATH
     try:
-        system_content = build_system_prompt(workspace)
+        # 从用户输入提取优先参考路径
+        fp = _extract_focus_path(prompt)
+        if fp:
+            _FOCUS_PATH = fp
+        system_content = build_system_prompt(workspace, _FOCUS_PATH)
         tasks = _split_tasks(prompt)
 
         messages = [{"role": "system", "content": system_content}]
