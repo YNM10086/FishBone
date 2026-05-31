@@ -2,10 +2,12 @@
 小鱼骨项目 — API 路由 + 工作空间状态管理
 FastAPI 应用实例在此创建，所有 HTTP 路由在此注册
 """
+import os as _os
 import threading
 import time as _time
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .ai_engine import process_chat
@@ -14,6 +16,11 @@ from .templates import render_home_page, render_chat_page
 
 # ── FastAPI 应用实例 ──────────────────────────────────────────────────
 app = FastAPI(title="小鱼骨GIS助手")
+
+# ── 静态文件挂载 ──────────────────────────────────────────────────────
+_STATIC_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "picture")
+if _os.path.isdir(_STATIC_DIR):
+    app.mount("/picture", StaticFiles(directory=_STATIC_DIR), name="picture")
 
 # ── 请求耗时中间件 ────────────────────────────────────────────────────
 
