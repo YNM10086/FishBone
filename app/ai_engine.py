@@ -41,6 +41,12 @@ _SYSTEM_PROMPT_TEMPLATE = """【小鱼骨项目强制执行规则 — 违反任�
 铁律20: 所有对象名称（文件名、要素类名、数据集名、字段名）必须原样匹配用户输入，禁止中英文自动翻译互通。用户说"城市"就只能找"城市"，绝不能找"City"；用户说"roads"就只能找"roads"，绝不能找"道路"
 铁律21: 当优先参考路径已设置且用户只给对象名称不给出完整路径时，严格三步执行：第1步调用 Tree_List 或 list_files_in_workspace 扫描优先参考路径；第2步在扫描结果中定位与用户名称完全一致的目标；第3步补齐完整路径后执行操作。三步缺一不可，严禁跳过扫描直接编造路径
 
+【地图数据展示铁律】
+铁律22: 当你调用 Geocode 或 POISearch 获取到坐标数据后，必须在最终回复末尾附加 __MAP_DATA__ 标记
+铁律23: 让地图自动标点的格式：__MAP_DATA__:{{"center":[纬度,经度],"zoom":15,"markers":[{{"name":"名称","lat":纬度,"lon":经度}},...]}}
+铁律24: center 取中心点坐标，zoom 根据范围选 12~17，markers 包含所有返回的 POI
+铁律25: __MAP_DATA__ 必须单独一行放在回复末尾，AI 的文字回复正常输出在前面
+
 【当前环境】
 当前工作目录：{workspace}
 {focus_path}你是小鱼骨GIS助手，回答简洁专业。不凭空判定目录内容，优先调用工具获取真实数据。
@@ -202,44 +208,46 @@ def _run_one_task(
     execute_tool_fn,
 ) -> str:
     """
-    执行单个子任务：一次 Ollama 推理 → 解析工具调用 → 执行 → AI 润色回复。
+    执行单个子任务：多步工具调用循环。
+    AI 可连续调用多个工具（如先 Geocode → 再 POISearch），
+    最多 max_turns 次工具调用后自动终止并返回最终回复。
     """
     messages.append({"role": "user", "content": task_prompt})
+    max_turns = 5
 
-    # ── Ollama 推理 ──
-    t0 = _time.time()
-    response = client.chat.completions.create(
-        model=OLLAMA_MODEL, messages=messages, temperature=0.1
-    )
-    ai_text = response.choices[0].message.content.strip()
-    print(f"[Ollama推理耗时] {_time.time() - t0:.2f}s")
+    for turn in range(max_turns):
+        t0 = _time.time()
+        response = client.chat.completions.create(
+            model=OLLAMA_MODEL, messages=messages, temperature=0.1
+        )
+        ai_text = response.choices[0].message.content.strip()
+        print(f"[Ollama推理耗时] turn {turn+1}: {_time.time() - t0:.2f}s")
 
-    tool_call = parse_tool_call(ai_text)
-    if tool_call is None:
-        return ai_text
+        tool_call = parse_tool_call(ai_text)
+        if tool_call is None:
+            return ai_text
 
-    # ── 执行工具 ──
-    tool_name = tool_call.get("name", "")
-    tool_args = tool_call.get("arguments", {})
-    if not isinstance(tool_args, dict):
-        tool_args = {}
+        tool_name = tool_call.get("name", "")
+        tool_args = tool_call.get("arguments", {})
+        if not isinstance(tool_args, dict):
+            tool_args = {}
 
-    result = execute_tool_fn(tool_name, tool_args, workspace)
+        result = execute_tool_fn(tool_name, tool_args, workspace)
 
-    messages.append({"role": "assistant", "content": ai_text})
+        messages.append({"role": "assistant", "content": ai_text})
+        messages.append({
+            "role": "user",
+            "content": f"工具执行结果：\n{result}"
+        })
 
-    # ── 把工具结果送给 AI 做润色回复 ──
     messages.append({
         "role": "user",
-        "content": f"工具执行结果：\n{result}\n\n请根据这个结果直接回答用户的问题，不要再调用工具。"
+        "content": "已达到最大工具调用次数，请根据已有结果直接回答用户问题，不要再调用工具。"
     })
-
-    t1 = _time.time()
     response = client.chat.completions.create(
         model=OLLAMA_MODEL, messages=messages, temperature=0.1
     )
-    print(f"[Ollama推理耗时] {_time.time() - t1:.2f}s")
-    return response.choices[0].message.content
+    return response.choices[0].message.content.strip()
 
 
 # ── 任务调度器 ────────────────────────────────────────────────────────

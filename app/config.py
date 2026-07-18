@@ -45,8 +45,8 @@ def _verify_arcpy_env() -> str:
 _ENV_INFO = _verify_arcpy_env()  # 导入时执行一次
 
 # ── Ollama AI 客户端 ──────────────────────────────────────────────────
-OLLAMA_BASE_URL = "http://localhost:11434/v1"
-OLLAMA_MODEL = "qwen2.5:7b"
+OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"  # 用 IPv4 而非 localhost，避免 Windows 解析到 IPv6 的空白 Ollama 实例
+OLLAMA_MODEL = "gemma4:latest"
 
 client = OpenAI(
     api_key="ollama",
@@ -62,3 +62,8 @@ SERVER_PORT = 8000
 print(f"[启动] 项目根目录: {PROJECT_ROOT}")
 print(f"[启动] {_ENV_INFO}")
 print(f"[启动] Ollama: {OLLAMA_BASE_URL}  模型: {OLLAMA_MODEL}")
+
+# ── 天地图服务配置 ─────────────────────────────────────────────────────
+TIANDITU_KEY = ""
+TIANDITU_GEO_URL = "https://api.tianditu.gov.cn/geocoding"
+TIANDITU_SEARCH_URL = "https://api.tianditu.gov.cn/v2/search"

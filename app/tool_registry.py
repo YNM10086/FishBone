@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 from .runner import call_script
 from scripts.file_tool.tree_list import run as _tree_list
+from .map_service.nominatim import geocode as _geocode
+from .map_service.overpass import poi_search as _poi_search
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -219,6 +221,25 @@ TOOLS: list[Tool] = [
             Param("new_alias", "string", "新别名（alias 操作需要）"),
         ],
         handler="data_process/filed",
+    ),
+    Tool(
+        name="Geocode",
+        description="将地址文本转为经纬度坐标。输入任意地址如'北京国贸'，返回坐标和完整地址名",
+        params=[
+            Param("address", "string", "要查询的地址文本，如'北京国贸'、'上海市南京路100号'", required=True),
+        ],
+        handler=_geocode,
+    ),
+    Tool(
+        name="POISearch",
+        description="在指定坐标附近搜索兴趣点(POI)。返回符合条件的名称和坐标列表",
+        params=[
+            Param("lat", "string", "中心点纬度，如 39.909", required=True),
+            Param("lon", "string", "中心点经度，如 116.460", required=True),
+            Param("radius", "string", "搜索半径，单位米，如 500", required=True),
+            Param("keyword", "string", "搜索关键词，如'便利店'、'餐厅'、'医院'", required=True),
+        ],
+        handler=_poi_search,
     ),
 ]
 

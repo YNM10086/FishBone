@@ -5,14 +5,17 @@ FastAPI 应用实例在此创建，所有 HTTP 路由在此注册
 import os as _os
 import threading
 import time as _time
+from urllib.request import urlopen as _urlopen, Request as _URLRequest
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .ai_engine import process_chat
 from .tool_registry import execute_tool
 from .templates import render_home_page, render_chat_page
+from .chat_store import save_history, load_history, clear_history
+from .config import TIANDITU_KEY
 
 # ── FastAPI 应用实例 ──────────────────────────────────────────────────
 app = FastAPI(title="小鱼骨GIS助手")
@@ -83,12 +86,51 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 def chat(request: ChatRequest):
     workspace = _get_workspace()
-    return process_chat(
+    result = process_chat(
         prompt=request.prompt,
         history=request.history,
         workspace=workspace,
         execute_tool_fn=execute_tool
     )
+    if "answer" in result:
+        updated = request.history + [
+            {"role": "user", "content": request.prompt},
+            {"role": "assistant", "content": result["answer"]},
+        ]
+        save_history(updated)
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 路由：对话历史持久化
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.get("/api/history")
+async def get_history():
+    return {"history": load_history()}
+
+
+class ClearHistoryRequest(BaseModel):
+    confirm: bool = False
+
+
+@app.post("/api/history/clear")
+async def clear_history_endpoint(_request: ClearHistoryRequest):
+    clear_history()
+    return {"status": "success", "message": "对话历史已清空"}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 路由：瓦片代理（避免浏览器跨域/跟踪拦截）
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.get("/api/tile/{z}/{x}/{y}")
+async def tile_proxy(z: int, x: int, y: int):
+    url = f"https://t0.tianditu.gov.cn/DataServer?T=vec_w&X={x}&Y={y}&L={z}&tk={TIANDITU_KEY}"
+    req = _URLRequest(url, headers={"User-Agent": "FishBoneX/1.0"})
+    with _urlopen(req, timeout=10) as resp:
+        data = resp.read()
+    return Response(content=data, media_type=resp.headers.get("Content-Type", "image/png"))
 
 
 # ═══════════════════════════════════════════════════════════════════════

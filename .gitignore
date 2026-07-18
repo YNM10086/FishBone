@@ -26,3 +26,9 @@ Thumbs.db
 .claude/
 .pytest_cache/
 Temp*.py
+
+# Chat history (auto-generated, not for version control)
+_chat_history.json
+
+# VSCode session memory (auto-generated conversation context)
+_session_context.md
