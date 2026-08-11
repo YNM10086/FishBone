@@ -5,7 +5,9 @@
 """
 import json
 import time as _time
-from .config import client, OLLAMA_MODEL, OLLAMA_BASE_URL
+from .config import (
+    get_ai_client, get_ai_model, get_ai_provider, OLLAMA_BASE_URL,
+)
 from .tool_registry import TOOLS
 
 
@@ -217,11 +219,11 @@ def _run_one_task(
 
     for turn in range(max_turns):
         t0 = _time.time()
-        response = client.chat.completions.create(
-            model=OLLAMA_MODEL, messages=messages, temperature=0.1
+        response = get_ai_client().chat.completions.create(
+            model=get_ai_model(), messages=messages, temperature=0.1
         )
         ai_text = response.choices[0].message.content.strip()
-        print(f"[Ollama推理耗时] turn {turn+1}: {_time.time() - t0:.2f}s")
+        print(f"[AI推理耗时] {get_ai_provider()} turn {turn+1}: {_time.time() - t0:.2f}s")
 
         tool_call = parse_tool_call(ai_text)
         if tool_call is None:
@@ -244,8 +246,8 @@ def _run_one_task(
         "role": "user",
         "content": "已达到最大工具调用次数，请根据已有结果直接回答用户问题，不要再调用工具。"
     })
-    response = client.chat.completions.create(
-        model=OLLAMA_MODEL, messages=messages, temperature=0.1
+    response = get_ai_client().chat.completions.create(
+        model=get_ai_model(), messages=messages, temperature=0.1
     )
     return response.choices[0].message.content.strip()
 
@@ -373,8 +375,14 @@ def process_chat(prompt: str, history: list, workspace: str,
     except Exception as e:
         err_msg = str(e)
         if "Connection" in err_msg or "connect" in err_msg:
-            err_msg = (
-                f"无法连接 Ollama ({OLLAMA_BASE_URL})，"
-                f"请确认 Ollama 已启动。原始错误：{err_msg}"
-            )
+            if get_ai_provider() == "api":
+                err_msg = (
+                    f"无法连接 DeepSeek API，请检查网络或 API Key 是否有效。"
+                    f"原始错误：{err_msg}"
+                )
+            else:
+                err_msg = (
+                    f"无法连接 Ollama ({OLLAMA_BASE_URL})，"
+                    f"请确认 Ollama 已启动。原始错误：{err_msg}"
+                )
         return {"error": err_msg}

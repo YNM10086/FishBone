@@ -15,7 +15,12 @@ from .ai_engine import process_chat
 from .tool_registry import execute_tool
 from .templates import render_home_page, render_chat_page
 from .chat_store import save_history, load_history, clear_history
-from .config import TIANDITU_KEY
+from .config import (
+    TIANDITU_KEY,
+    get_ai_config_dict, set_ai_provider, set_ai_local_model,
+    set_ai_api_model, set_ai_api_key, set_ai_api_base_url,
+    save_ai_config,
+)
 
 # ── FastAPI 应用实例 ──────────────────────────────────────────────────
 app = FastAPI(title="小鱼骨GIS助手")
@@ -51,7 +56,7 @@ def _get_workspace() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def home_page():
-    return render_home_page(_get_workspace())
+    return render_home_page(_get_workspace(), get_ai_config_dict())
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -134,9 +139,41 @@ async def tile_proxy(z: int, x: int, y: int):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# 路由：AI 提供者配置（本地 Ollama / DeepSeek API 切换）
+# ═══════════════════════════════════════════════════════════════════════
+
+class AIConfigRequest(BaseModel):
+    provider: str = "local"       # "local" | "api"
+    local_model: str = ""
+    api_model: str = ""
+    api_key: str = ""
+    api_base_url: str = ""
+
+
+@app.get("/api/ai_config")
+async def get_ai_config():
+    return get_ai_config_dict()
+
+
+@app.post("/api/ai_config")
+async def set_ai_config(request: AIConfigRequest):
+    set_ai_provider(request.provider)
+    set_ai_local_model(request.local_model)
+    set_ai_api_model(request.api_model)
+    set_ai_api_key(request.api_key)
+    set_ai_api_base_url(request.api_base_url)
+    save_ai_config()
+    return {
+        "status": "success",
+        "message": "AI 配置已保存",
+        **get_ai_config_dict(),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # 路由：聊天页面
 # ═══════════════════════════════════════════════════════════════════════
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page():
-    return render_chat_page(_get_workspace())
+    return render_chat_page(_get_workspace(), get_ai_config_dict())
