@@ -7,9 +7,13 @@ import os
 from dataclasses import dataclass, field
 from collections.abc import Callable
 from .runner import call_script
+from .lock_check import check_locks
 from scripts.file_tool.tree_list import run as _tree_list
 from .map_service.nominatim import geocode as _geocode
 from .map_service.overpass import poi_search as _poi_search
+from .geo_tools import zone_calc as _zone_calc
+from .geo_tools import topo_map_number as _topo_map_number
+from .geo_tools import datfix as _datfix
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -241,6 +245,33 @@ TOOLS: list[Tool] = [
         ],
         handler=_poi_search,
     ),
+    Tool(
+        name="Zone_Calc",
+        description="地信坐标计算：输入经度求 6°带/3°带带号，或输入带号求中央子午线。当用户询问某经度属于几度带、或某带号对应中央子午线时使用",
+        params=[
+            Param("zone_type", "string", "投影带类型：6°带 或 3°带，默认 6°带", enum=["6°带", "3°带"]),
+            Param("mode", "string", "计算方向：longitude=输入经度求带号；zone=输入带号求中央子午线", required=True, enum=["longitude", "zone"]),
+            Param("value", "string", "输入数值：mode=longitude 时是经度（十进制，东经为正）；mode=zone 时是带号", required=True),
+        ],
+        handler=_zone_calc,
+    ),
+    Tool(
+        name="Topo_Map_Number",
+        description="地形图分幅编号计算（GB/T 13989-2012）：输入经纬度，一次算出 1:100万 至 1:1万 共 7 种比例尺的图幅编号。当用户询问某地点/经纬度的地形图图幅编号、图号、分幅号时使用",
+        params=[
+            Param("longitude", "string", "经度，支持两种格式：标准度分秒如 116°3'45\" E（E/W 方向后缀），或十进制如 116.0625", required=True),
+            Param("latitude", "string", "纬度，支持两种格式：标准度分秒如 39°54'23\" N（N/S 方向后缀），或十进制如 39.9064", required=True),
+        ],
+        handler=_topo_map_number,
+    ),
+    Tool(
+        name="DatFix",
+        description="DAT 数据修复：将文本文件每行第一个逗号删除，并在每行末尾添加逗号，生成 *_fix 后缀的新文件。用户要求修复 dat 文件、处理逗号错位的文本数据时使用",
+        params=[
+            Param("file_path", "string", "要修复的 .dat 或文本文件的完整路径", required=True),
+        ],
+        handler=_datfix,
+    ),
 ]
 
 # ── 名称索引（import 时自动构建） ─────────────────────────────────────
@@ -251,8 +282,42 @@ _TOOL_BY_NAME: dict[str, Tool] = {t.name: t for t in TOOLS}
 # 统一工具调度
 # ═══════════════════════════════════════════════════════════════════════
 
+# 写操作工具：执行前必须做 ArcGIS 占用锁前置检测
+# （Create_Database 是新建 GDB 无锁；File_New 是普通文件夹，均不检测）
+_WRITE_TOOLS = {
+    "Create_Dataset",
+    "Create_Element",
+    "Field_Edit",
+    "Copy_File",
+    "Delete_File",
+    "Buffer",
+}
+
+
+def _lock_precheck(name: str, args: dict) -> str | None:
+    """写操作工具执行前的锁检测。返回非 None 时表示拦截/提示，调用方不得执行"""
+    if name not in _WRITE_TOOLS:
+        return None
+    result = check_locks(args)
+    if result["blocked"]:
+        if result["unknown"]:
+            msg = (
+                "检测到 ArcGIS 锁文件（无法确认占用进程），"
+                "请确认 ArcGIS 工程已完全关闭后重试"
+            )
+        else:
+            msg = "ArcGIS 已占用数据库，请关闭 ArcGIS 工程后再执行编辑操作"
+        return f'__BLOCK_ALERT__:{{"message": "{msg}"}}'
+    if result["cleaned"]:
+        return f"已自动清理 {len(result['cleaned'])} 个残留 ArcGIS 锁文件，继续执行。"
+    return None
+
+
 def execute_tool(name: str, args: dict, workspace: str) -> str:
-    """查表 + 委托 Tool.execute() 自动分发"""
+    """查表 + 委托 Tool.execute() 自动分发（写操作前先做锁检测）"""
+    precheck = _lock_precheck(name, args)
+    if precheck is not None:
+        return precheck
     tool = _TOOL_BY_NAME.get(name)
     if tool:
         return tool.execute(args, workspace)

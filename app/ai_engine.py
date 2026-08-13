@@ -20,34 +20,39 @@ _SYSTEM_PROMPT_TEMPLATE = """【小鱼骨项目强制执行规则 — 违反任�
 铁律3: 禁止在JSON前后加解释、说明、问候语、多余换行
 铁律4: 参数值中的路径统一使用正斜杠 /，禁止反斜杠
 铁律5: 工具参数严格按照工具定义传入，禁止篡改参数名、随意赋值
+铁律6: 你只是语言模型，输出 JSON 指令后，工具会由系统在真实 ArcGIS 环境中执行，执行结果会返回给你，无需你亲自执行任何操作；禁止解释或声明自己无法执行工具，直接输出 JSON 指令即可
 
-【多任务解析与执行铁律】
-铁律6: 自动拆分连续多条自然语言指令，梳理先后执行次序
-铁律7: 主动识别任务前后依赖关系，前置任务未完成不得执行后续依赖任务
-铁律8: 任务相互隔离，变量、文件、空间状态互不干扰，杜绝任务数据混杂错乱
-铁律9: 逐条校验单任务合法性，参数缺失、要素不存在等问题自动识别标记
+【多任务解析与执行参考（非强制，供判断参考）】
+参考1: 用户输入按句号（。.）划分多个独立指令时，可参考句号边界梳理先后执行次序；若无句号分隔则视为单个任务，不要强行拆分
+参考2: 主动识别任务前后依赖关系，前置任务未完成不得执行后续依赖任务
+参考3: 任务相互隔离，变量、文件、空间状态互不干扰，杜绝任务数据混杂错乱
+参考4: 逐条校验单任务合法性，参数缺失、要素不存在等问题自动识别标记
 
 【任务结果总结铁律】
-铁律10: 全部任务执行结束后，自动汇总整体执行情况
-铁律11: 统计总任务数量、成功数量、失败数量，逐条罗列任务执行结果
-铁律12: 标注失败任务，清晰写明报错诱因，同步给出简易修正方向
-铁律13: 整理规整问题清单，条理分明呈现内容，避免信息混乱交织
+铁律7: 全部任务执行结束后，自动汇总整体执行情况
+铁律8: 统计总任务数量、成功数量、失败数量，逐条罗列任务执行结果
+铁律9: 标注失败任务，清晰写明报错诱因，同步给出简易修正方向
+铁律10: 整理规整问题清单，条理分明呈现内容，避免信息混乱交织
 
 【GIS操作行为铁律】
-铁律14: 所有GIS操作必须调用对应工具，禁止自行编写ArcPy代码
-铁律15: 创建要素类必须调用 Create_Element 工具，禁止自行调用CreateFeatureclass相关逻辑
-铁律16: 要素类名称仅填写纯名称，禁止附带.shp后缀
-铁律17: GDB地理数据库仅填写纯名称，工具自动补充.gdb后缀
-铁律18: 创建操作完成后，必须调用Describe_GDB或list_files_in_workspace核验结果，严禁虚构执行状态
-铁律19: 仅获取文件夹名称无完整路径时，先调用get_current_workspace获取目录，检索拼接完整路径后再传参，禁止主观猜测路径
-铁律20: 所有对象名称（文件名、要素类名、数据集名、字段名）必须原样匹配用户输入，禁止中英文自动翻译互通。用户说"城市"就只能找"城市"，绝不能找"City"；用户说"roads"就只能找"roads"，绝不能找"道路"
-铁律21: 当优先参考路径已设置且用户只给对象名称不给出完整路径时，严格三步执行：第1步调用 Tree_List 或 list_files_in_workspace 扫描优先参考路径；第2步在扫描结果中定位与用户名称完全一致的目标；第3步补齐完整路径后执行操作。三步缺一不可，严禁跳过扫描直接编造路径
+铁律11: 所有GIS操作必须调用对应工具，禁止自行编写ArcPy代码
+铁律12: 创建要素类必须调用 Create_Element 工具，禁止自行调用CreateFeatureclass相关逻辑
+铁律13: 要素类名称仅填写纯名称，禁止附带.shp后缀
+铁律14: GDB地理数据库仅填写纯名称，工具自动补充.gdb后缀
+铁律15: 创建操作完成后，必须调用Describe_GDB或list_files_in_workspace核验结果，严禁虚构执行状态
+铁律16: 仅获取文件夹名称无完整路径时，先调用get_current_workspace获取目录，检索拼接完整路径后再传参，禁止主观猜测路径
+铁律17: 所有对象名称（文件名、要素类名、数据集名、字段名）必须原样匹配用户输入，禁止中英文自动翻译互通。用户说"城市"就只能找"城市"，绝不能找"City"；用户说"roads"就只能找"roads"，绝不能找"道路"
+铁律18: 当优先参考路径已设置且用户只给对象名称不给出完整路径时，严格三步执行：第1步调用 Tree_List 或 list_files_in_workspace 扫描优先参考路径；第2步在扫描结果中定位与用户名称完全一致的目标；第3步补齐完整路径后执行操作。三步缺一不可，严禁跳过扫描直接编造路径
+
+【数值计算铁律】
+铁律19: 所有带号、中央子午线、经纬度换算、地形图分幅编号等计算必须调用 Zone_Calc / Topo_Map_Number 工具，禁止自行心算、禁止现场编写代码计算、禁止凭印象估算，你只能转述工具返回的结果
+铁律20: 工具返回的数字结果原样输出，禁止改动、美化或自行重新计算
 
 【地图数据展示铁律】
-铁律22: 当你调用 Geocode 或 POISearch 获取到坐标数据后，必须在最终回复末尾附加 __MAP_DATA__ 标记
-铁律23: 让地图自动标点的格式：__MAP_DATA__:{{"center":[纬度,经度],"zoom":15,"markers":[{{"name":"名称","lat":纬度,"lon":经度}},...]}}
-铁律24: center 取中心点坐标，zoom 根据范围选 12~17，markers 包含所有返回的 POI
-铁律25: __MAP_DATA__ 必须单独一行放在回复末尾，AI 的文字回复正常输出在前面
+铁律21: 当你调用 Geocode 或 POISearch 获取到坐标数据后，必须在最终回复末尾附加 __MAP_DATA__ 标记
+铁律22: 让地图自动标点的格式：__MAP_DATA__:{{"center":[纬度,经度],"zoom":15,"markers":[{{"name":"名称","lat":纬度,"lon":经度}},...]}}
+铁律23: center 取中心点坐标，zoom 根据范围选 12~17，markers 包含所有返回的 POI
+铁律24: __MAP_DATA__ 必须单独一行放在回复末尾，AI 的文字回复正常输出在前面
 
 【当前环境】
 当前工作目录：{workspace}
@@ -61,6 +66,9 @@ _SYSTEM_PROMPT_TEMPLATE = """【小鱼骨项目强制执行规则 — 违反任�
 _TOOL_EXAMPLES = {
     "get_current_workspace": '{"name": "get_current_workspace", "arguments": {}}',
     "list_files_in_workspace": '{"name": "list_files_in_workspace", "arguments": {}}',
+    "Zone_Calc": '{"name": "Zone_Calc", "arguments": {"zone_type": "6°带", "mode": "longitude", "value": "116.25"}}',
+    "Topo_Map_Number": '{"name": "Topo_Map_Number", "arguments": {"longitude": "116°3\'45\\" E", "latitude": "39°54\'23\\" N"}}',
+    "DatFix": '{"name": "DatFix", "arguments": {"file_path": "D:/Data/points.dat"}}',
 }
 
 def _build_tools_desc() -> str:
@@ -146,6 +154,35 @@ def parse_tool_call(text: str) -> dict | None:
         except (json.JSONDecodeError, Exception):
             pass
 
+    # 4. 全角/中文引号容错：把 “ ” ‘ ’ 换成标准引号再解析（本地小模型常见）
+    normalized = (
+        text.replace("“", '"').replace("”", '"')
+        .replace("‘", "'").replace("’", "'")
+    )
+    if normalized != text:
+        norm_candidates = [normalized]
+        start = normalized.find("{")
+        if start != -1:
+            depth = 0
+            end = -1
+            for i in range(start, len(normalized)):
+                if normalized[i] == "{":
+                    depth += 1
+                elif normalized[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            if end != -1:
+                norm_candidates.append(normalized[start:end + 1])
+        for candidate in norm_candidates:
+            try:
+                obj = json.loads(candidate)
+                if isinstance(obj, dict) and "name" in obj:
+                    return obj
+            except (json.JSONDecodeError, Exception):
+                pass
+
     return None
 
 
@@ -153,8 +190,9 @@ def parse_tool_call(text: str) -> dict | None:
 
 import re as _re
 
-# 分隔符：中文逗号/句号/顿号/分号 + 英文逗号/分号 + 换行
-_TASK_SEP = _re.compile(r'[，,。、；;\n]+')
+# 仅按句号划分任务：中文句号"。" + 英文句尾句号"."（点后须跟空白或行尾，排除小数点 116.25 和扩展名 .gdb）
+# 逗号/顿号/分号/换行不再触发拆分，避免一句完整指令被拆裂
+_TASK_SEP = _re.compile(r'[。]|(?<!\d)\.(?=\s|$)')
 
 # 会话级优先参考路径
 _FOCUS_PATH = ""
@@ -183,7 +221,7 @@ def _extract_focus_path(prompt: str) -> str:
 
 
 def _split_tasks(prompt: str) -> list[str]:
-    """按中英文标点拆分用户输入为独立子任务列表"""
+    """按句号拆分用户输入为独立子任务列表（仅供参考划分，非强制）"""
     parts = _TASK_SEP.split(prompt)
     return [p.strip() for p in parts if p.strip()]
 
