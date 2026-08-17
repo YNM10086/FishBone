@@ -54,6 +54,9 @@ _SYSTEM_PROMPT_TEMPLATE = """【小鱼骨项目强制执行规则 — 违反任�
 铁律23: center 取中心点坐标，zoom 根据范围选 12~17，markers 包含所有返回的 POI
 铁律24: __MAP_DATA__ 必须单独一行放在回复末尾，AI 的文字回复正常输出在前面
 
+【数据安全铁律】
+铁律25: 执行 Delete_Features（要素删除，尤其是无 where_clause 的全量删除）等破坏性操作前，必须确认用户明确要求删除、目标路径已通过 Describe_GDB / Tree_List 核验存在且指向正确，禁止擅自删除、禁止臆造路径
+
 【当前环境】
 当前工作目录：{workspace}
 {focus_path}你是小鱼骨GIS助手，回答简洁专业。不凭空判定目录内容，优先调用工具获取真实数据。
@@ -69,6 +72,15 @@ _TOOL_EXAMPLES = {
     "Zone_Calc": '{"name": "Zone_Calc", "arguments": {"zone_type": "6°带", "mode": "longitude", "value": "116.25"}}',
     "Topo_Map_Number": '{"name": "Topo_Map_Number", "arguments": {"longitude": "116°3\'45\\" E", "latitude": "39°54\'23\\" N"}}',
     "DatFix": '{"name": "DatFix", "arguments": {"file_path": "D:/Data/points.dat"}}',
+    "Intersect": '{"name": "Intersect", "arguments": {"in_features": "D:/Data/居民区.shp;D:/Data/洪涝范围.shp", "out_feature_class": "D:/Data/受淹住宅.shp"}}',
+    "Clip": '{"name": "Clip", "arguments": {"in_features": "D:/Data/道路.shp", "clip_features": "D:/Data/泉州市界.shp", "out_feature_class": "D:/Data/泉州市道路.shp"}}',
+    "Spatial_Join": '{"name": "Spatial_Join", "arguments": {"target_features": "D:/Data/小区.shp", "join_features": "D:/Data/学校.shp", "out_feature_class": "D:/Data/小区_带学校.shp", "match_option": "WITHIN_A_DISTANCE", "search_radius": "1 Kilometers"}}',
+    "Delete_Features": '{"name": "Delete_Features", "arguments": {"in_features": "D:/Data/Test.gdb/地块", "where_clause": "面积 < 100"}}',
+    "Dissolve": '{"name": "Dissolve", "arguments": {"in_features": "D:/Data/Test.gdb/道路", "out_feature_class": "D:/Data/Test.gdb/道路_合并", "dissolve_field": "road_name"}}',
+    "Split_By_Attribute": '{"name": "Split_By_Attribute", "arguments": {"in_features": "D:/Data/Test.gdb/地块", "split_field": "行政区", "out_workspace": "D:/Data/拆分结果.gdb"}}',
+    "Merge": '{"name": "Merge", "arguments": {"inputs": "D:/Data/道路A.shp;D:/Data/道路B.shp", "output": "D:/Data/道路_合并.shp"}}',
+    "Calculate_Field": '{"name": "Calculate_Field", "arguments": {"in_table": "D:/Data/Test.gdb/地块", "field": "area_sqm", "calc_type": "面积(平方米)"}}',
+    "Service_Area": '{"name": "Service_Area", "arguments": {"start_points": "D:/Data/Test.gdb/小区", "mode": "walk", "minutes": "10", "out_feature_class": "D:/Data/Test.gdb/步行10分钟服务区"}}',
 }
 
 def _build_tools_desc() -> str:

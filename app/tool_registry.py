@@ -272,6 +272,129 @@ TOOLS: list[Tool] = [
         ],
         handler=_datfix,
     ),
+    Tool(
+        name="Intersect",
+        description="相交分析：提取多个图层的重叠区域（如：居民区+洪涝范围=受淹住宅）。两个及以上图层参与，输出相交部分",
+        params=[
+            Param("in_features", "string", "输入图层完整路径，多个图层用分号 ; 分隔，如 D:/Data/居民区.shp;D:/Data/洪涝范围.shp", required=True),
+            Param("out_feature_class", "string", "输出要素类完整路径", required=True),
+            Param("join_attributes", "string", "属性连接方式：ALL(全部属性)/NO_FID(无FID)/ONLY_FID(仅FID)，默认 ALL", enum=["ALL", "NO_FID", "ONLY_FID"]),
+            Param("output_type", "string", "输出几何类型：INPUT(同输入)/LINE(线)/POINT(点)，默认 INPUT", enum=["INPUT", "LINE", "POINT"]),
+        ],
+        handler="analysis_tool/intersect",
+    ),
+    Tool(
+        name="Clip",
+        description="裁剪分析：用裁剪要素（如行政区边界）裁切矢量图层（如路网、POI 数据），保留边界内的部分",
+        params=[
+            Param("in_features", "string", "被裁剪图层的完整路径", required=True),
+            Param("clip_features", "string", "裁剪边界要素的完整路径（如泉州市边界）", required=True),
+            Param("out_feature_class", "string", "输出要素类完整路径", required=True),
+        ],
+        handler="analysis_tool/clip",
+    ),
+    Tool(
+        name="Spatial_Join",
+        description="空间连接：依据空间位置关系，把连接图层的属性挂到目标图层上（如给学校周边 1km 内的小区挂上学校名称）。注意：1km 等距离匹配必须用 match_option=WITHIN_A_DISTANCE + search_radius",
+        params=[
+            Param("target_features", "string", "目标图层完整路径（属性被挂载的图层）", required=True),
+            Param("join_features", "string", "连接图层完整路径（提供属性的图层）", required=True),
+            Param("out_feature_class", "string", "输出要素类完整路径", required=True),
+            Param("join_operation", "string", "连接操作：JOIN_ONE_TO_ONE(一对一)/JOIN_ONE_TO_MANY(一对多)，默认 JOIN_ONE_TO_ONE", enum=["JOIN_ONE_TO_ONE", "JOIN_ONE_TO_MANY"]),
+            Param("join_type", "string", "保留方式：KEEP_ALL(保留全部目标)/KEEP_COMMON(仅保留有匹配的)，默认 KEEP_ALL", enum=["KEEP_ALL", "KEEP_COMMON"]),
+            Param("match_option", "string", "空间匹配方式：INTERSECT(相交)/WITHIN_A_DISTANCE(距离范围内)/CLOSEST(最近)，默认 INTERSECT", enum=["INTERSECT", "WITHIN_A_DISTANCE", "CLOSEST"]),
+            Param("search_radius", "string", "搜索半径（match_option=WITHIN_A_DISTANCE 时必填），格式如 '1 Kilometers'、'500 Meters'"),
+        ],
+        handler="analysis_tool/spatial_join",
+    ),
+    Tool(
+        name="Delete_Features",
+        description="要素删除：按条件批量删除要素类中的要素（如'删除面积小于100的地块'）。where_clause 不填则删除全部要素（危险操作，仅在用户明确要求时使用）",
+        params=[
+            Param("in_features", "string", "要素类完整路径", required=True),
+            Param("where_clause", "string", "删除条件 SQL 表达式，如 面积 < 100；不填则删除该要素类全部要素"),
+        ],
+        handler="edit_tool/delete_features",
+    ),
+    Tool(
+        name="Dissolve",
+        description="融合合并：按指定字段合并要素（如按道路名称把多条路段合并为一条）；不指定字段则把所有要素融合为一个",
+        params=[
+            Param("in_features", "string", "输入图层完整路径", required=True),
+            Param("out_feature_class", "string", "输出要素类完整路径", required=True),
+            Param("dissolve_field", "string", "融合依据字段名（如道路名称），多个字段用分号分隔；不填则全部融合为一个要素"),
+            Param("multi_part", "string", "是否允许多部件：MULTI_PART/SINGLE_PART，默认 MULTI_PART", enum=["MULTI_PART", "SINGLE_PART"]),
+            Param("unsplit_lines", "string", "线处理：DISSOLVE_LINES(融合)/UNSPLIT_LINES(保留相接线)，默认 DISSOLVE_LINES", enum=["DISSOLVE_LINES", "UNSPLIT_LINES"]),
+        ],
+        handler="edit_tool/dissolve",
+    ),
+    Tool(
+        name="Split",
+        description="按范围面拆分：用多边形要素（如行政区/分区面）把输入要素拆分成多个要素类，每个面一个输出，命名 {输入名}_{字段值}。例：用泉州市各区县面拆分路网",
+        params=[
+            Param("in_features", "string", "被拆分的输入要素完整路径", required=True),
+            Param("split_features", "string", "分割面要素（多边形图层，如行政区面）完整路径", required=True),
+            Param("split_field", "string", "分割面上用于命名输出的字符字段（如区名），字段唯一值个数=输出要素类数量", required=True),
+            Param("out_workspace", "string", "输出工作空间完整路径（已存在的 GDB 或文件夹）", required=True),
+        ],
+        handler="edit_tool/split",
+    ),
+    Tool(
+        name="Split_By_Attribute",
+        description="按属性拆分：按字段的唯一值把一个要素类拆分成多个独立要素类（如按行政区名拆分地块），输出命名 {原要素类名}_{字段值}",
+        params=[
+            Param("in_features", "string", "输入要素类完整路径", required=True),
+            Param("split_field", "string", "按哪个字段的唯一值拆分（字段须已存在）", required=True),
+            Param("out_workspace", "string", "输出工作空间完整路径（已存在的 GDB 或文件夹）", required=True),
+        ],
+        handler="edit_tool/split_by_attribute",
+    ),
+    Tool(
+        name="Merge",
+        description="多图层合并：将多个同类型要素图层（点/线/面）合并为一个图层",
+        params=[
+            Param("inputs", "string", "多个输入图层完整路径，用分号 ; 分隔（至少 2 个）", required=True),
+            Param("output", "string", "输出要素类完整路径", required=True),
+            Param("add_source", "string", "是否添加来源信息字段：ADD_SOURCE_INFO/NO_SOURCE_INFO，默认 NO_SOURCE_INFO", enum=["ADD_SOURCE_INFO", "NO_SOURCE_INFO"]),
+            Param("field_match_mode", "string", "字段匹配模式：AUTOMATIC(自动)/MANUAL_EDIT(手动)/USE_FIRST_SCHEMA(用第一个),默认 AUTOMATIC", enum=["AUTOMATIC", "MANUAL_EDIT", "USE_FIRST_SCHEMA"]),
+        ],
+        handler="edit_tool/merge",
+    ),
+    Tool(
+        name="Calculate_Field",
+        description="字段计算：给已有字段赋值。支持预置类型：面积(平方米)自动用 !shape.area@SQUAREMETERS!、长度(米)自动用 !shape.length@METERS!；或自定义 Python 表达式（如条件赋值 1 if !面积字段! > 500 else 0）。字段须已存在（可先用 Batch_Field_Edit 添加）",
+        params=[
+            Param("in_table", "string", "要素类/表完整路径", required=True),
+            Param("field", "string", "要赋值的字段名（须已存在）", required=True),
+            Param("calc_type", "string", "计算类型：面积(平方米)/长度(米)/自定义，默认 自定义", enum=["面积(平方米)", "长度(米)", "自定义"]),
+            Param("expression", "string", "自定义表达式（calc_type=自定义 时必填），如 1 if !shape.area@SQUAREMETERS! > 500 else 0"),
+            Param("code_block", "string", "Python 代码块（可选，用于复杂计算函数）"),
+        ],
+        handler="data_process/calculate_field",
+    ),
+    Tool(
+        name="Batch_Field_Edit",
+        description="批量字段编辑：一次添加/删除多个字段。add 格式：名称:TYPE:长度;名称2（TYPE 默认 TEXT，长度仅 TEXT 生效）；delete 格式：名称1;名称2",
+        params=[
+            Param("feature_class", "string", "要素类完整路径", required=True),
+            Param("action", "string", "操作类型：add(添加字段)/delete(删除字段)", required=True, enum=["add", "delete"]),
+            Param("fields", "string", "字段列表：add 用 '名称:TYPE:长度;名称2'，delete 用 '名称1;名称2'", required=True),
+        ],
+        handler="data_process/batch_field_edit",
+    ),
+    Tool(
+        name="Service_Area",
+        description="服务区分析（轻量直线近似版）：基于起点（点要素类），按步行 80 米/分钟、驾车 600 米/分钟 × 时间生成缓冲区服务区面。可选传入道路图层，同时输出服务区内可达道路",
+        params=[
+            Param("start_points", "string", "起点要素类（点）完整路径", required=True),
+            Param("mode", "string", "出行方式：walk(步行)/drive(驾车)，默认 walk", enum=["walk", "drive"]),
+            Param("minutes", "string", "出行时间（分钟），默认 10"),
+            Param("out_feature_class", "string", "服务区面输出完整路径", required=True),
+            Param("road_network", "string", "道路线要素完整路径（可选，提供后输出服务区内可达道路）"),
+            Param("out_roads", "string", "服务区内道路输出路径（提供 road_network 时必填）"),
+        ],
+        handler="analysis_tool/service_area",
+    ),
 ]
 
 # ── 名称索引（import 时自动构建） ─────────────────────────────────────
@@ -291,6 +414,18 @@ _WRITE_TOOLS = {
     "Copy_File",
     "Delete_File",
     "Buffer",
+    # 2026-08-17 新增分析/编辑类工具：全部涉及 GDB 写入，统一前置锁检测
+    "Intersect",
+    "Clip",
+    "Spatial_Join",
+    "Delete_Features",
+    "Dissolve",
+    "Split",
+    "Split_By_Attribute",
+    "Merge",
+    "Calculate_Field",
+    "Batch_Field_Edit",
+    "Service_Area",
 }
 
 

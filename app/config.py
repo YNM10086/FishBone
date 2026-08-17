@@ -33,7 +33,7 @@ def _verify_arcpy_env() -> str:
              "print(sys.executable); "
              "print('Python ' + sys.version.split()[0]); "
              "print('ArcGIS Pro ' + arcpy.GetInstallInfo()['Version'])"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=30,
             encoding="utf-8", errors="replace",
         )
         lines = r.stdout.strip().split("\n")
