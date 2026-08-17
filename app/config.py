@@ -23,6 +23,29 @@ def _detect_arcpy_python() -> str:
 ARCGIS_PRO_PYTHON = _detect_arcpy_python()
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# ── .env 环境变量加载（密钥不入库：DeepSeek/天地图 Key 从 .env 读取） ──
+def _load_dotenv() -> None:
+    """读取项目根目录 .env（若存在）并注入 os.environ（不覆盖系统已有变量）"""
+    env_path = os.path.join(PROJECT_ROOT, ".env")
+    if not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass
+
+
+_load_dotenv()
+
 # ── 启动时验证 ArcGIS Pro Python 环境（后台线程执行，绝不阻塞启动） ──
 def _verify_arcpy_env() -> str:
     import subprocess as _sp
@@ -58,8 +81,8 @@ def _verify_arcpy_env_async() -> None:
 threading.Thread(target=_verify_arcpy_env_async, daemon=True).start()
 
 # ── Ollama AI 客户端 ──────────────────────────────────────────────────
-OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"  # 用 IPv4 而非 localhost，避免 Windows 解析到 IPv6 的空白 Ollama 实例
-DEFAULT_OLLAMA_MODEL = "gemma4:latest"
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")  # 用 IPv4 而非 localhost，避免 Windows 解析到 IPv6 的空白 Ollama 实例
+DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:latest")
 
 client = OpenAI(
     api_key="ollama",
@@ -67,10 +90,10 @@ client = OpenAI(
     timeout=30.0
 )
 
-# ── DeepSeek API 客户端配置（开发期预置，可在首页修改并持久化） ──────
-DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
-DEFAULT_DEEPSEEK_API_KEY = ""
+# ── DeepSeek API 客户端配置（密钥从环境变量 .env 读取，首页可改并持久化） ──
+DEFAULT_DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+DEFAULT_DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+DEFAULT_DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 
 # ── AI 提供者运行时状态（线程安全，支持 local/api 随时切换） ──────────
 _ai_lock = threading.Lock()
@@ -194,7 +217,7 @@ _provider_name = "本地 Ollama" if ai_provider == "local" else "DeepSeek API"
 print(f"[启动] AI 提供者: {_provider_name}  模型: {get_ai_model()}")
 print(f"[启动] Ollama: {OLLAMA_BASE_URL}  默认模型: {DEFAULT_OLLAMA_MODEL}")
 
-# ── 天地图服务配置 ─────────────────────────────────────────────────────
-TIANDITU_KEY = ""
+# ── 天地图服务配置（Key 从环境变量 .env 读取） ────────────────────────
+TIANDITU_KEY = os.environ.get("TIANDITU_KEY", "")
 TIANDITU_GEO_URL = "https://api.tianditu.gov.cn/geocoding"
 TIANDITU_SEARCH_URL = "https://api.tianditu.gov.cn/v2/search"

@@ -8,6 +8,8 @@ def geocode(args: dict, _workspace: str = "") -> dict:
     address = args.get("address", "")
     if not address:
         return {"error": "缺少地址参数"}
+    if not TIANDITU_KEY:
+        return {"error": "未配置天地图 Key：请在项目根目录 .env 中设置 TIANDITU_KEY 后重启服务"}
     ds = json.dumps({"keyWord": address}, ensure_ascii=False)
     url = f"{TIANDITU_GEO_URL}?ds={quote(ds)}&tk={TIANDITU_KEY}"
     req = Request(url, headers={"User-Agent": "FishBoneX/1.0"})

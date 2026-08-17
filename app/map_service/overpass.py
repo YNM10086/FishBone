@@ -12,6 +12,8 @@ def _compute_map_bound(lat: float, lon: float, radius: int) -> str:
 
 
 def poi_search(args: dict, _workspace: str = "") -> dict:
+    if not TIANDITU_KEY:
+        return {"error": "未配置天地图 Key：请在项目根目录 .env 中设置 TIANDITU_KEY 后重启服务"}
     try:
         lat = float(args.get("lat", 0))
         lon = float(args.get("lon", 0))
