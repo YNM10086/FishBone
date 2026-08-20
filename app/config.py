@@ -82,7 +82,7 @@ threading.Thread(target=_verify_arcpy_env_async, daemon=True).start()
 
 # ── Ollama AI 客户端 ──────────────────────────────────────────────────
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")  # 用 IPv4 而非 localhost，避免 Windows 解析到 IPv6 的空白 Ollama 实例
-DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:latest")
+DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 
 client = OpenAI(
     api_key="ollama",

@@ -253,6 +253,46 @@ def _clean_history(history: list) -> list:
 
 # ── 单任务工具调用循环 ──────────────────────────────────────────────────# ── 单任务工具调用循环 ──────────────────────────────────────────────────
 
+def _chat_completion(messages: list) -> str:
+    """
+    向当前 provider 发起一次对话补全，返回 AI 文本。
+    - 本地模式：走 Ollama 原生 /api/chat 并关闭思考模式（qwen3 默认思考会拖慢响应，
+      且 reasoning 对工具调用无意义；OpenAI 兼容端点不传 think 参数）
+    - API 模式：走 OpenAI 兼容客户端（DeepSeek）
+    """
+    if get_ai_provider() == "local":
+        import json as _json
+        from urllib.error import URLError as _URLError
+        from urllib.request import Request as _URLRequest, urlopen as _urlopen
+
+        base = OLLAMA_BASE_URL.rstrip("/").removesuffix("/v1")
+        payload = {
+            "model": get_ai_model(),
+            "messages": messages,
+            "stream": False,
+            "think": False,
+            "options": {"temperature": 0.1},
+        }
+        req = _URLRequest(
+            f"{base}/api/chat",
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with _urlopen(req, timeout=300) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+        except _URLError as e:
+            raise RuntimeError(
+                f"无法连接 Ollama ({OLLAMA_BASE_URL})，请确认 Ollama 已启动。原始错误：{e}"
+            ) from e
+        return (data.get("message", {}).get("content") or "").strip()
+
+    response = get_ai_client().chat.completions.create(
+        model=get_ai_model(), messages=messages, temperature=0.1
+    )
+    return response.choices[0].message.content.strip()
+
+
 def _run_one_task(
     task_prompt: str,
     messages: list,
@@ -269,10 +309,7 @@ def _run_one_task(
 
     for turn in range(max_turns):
         t0 = _time.time()
-        response = get_ai_client().chat.completions.create(
-            model=get_ai_model(), messages=messages, temperature=0.1
-        )
-        ai_text = response.choices[0].message.content.strip()
+        ai_text = _chat_completion(messages)
         print(f"[AI推理耗时] {get_ai_provider()} turn {turn+1}: {_time.time() - t0:.2f}s")
 
         tool_call = parse_tool_call(ai_text)
@@ -296,10 +333,7 @@ def _run_one_task(
         "role": "user",
         "content": "已达到最大工具调用次数，请根据已有结果直接回答用户问题，不要再调用工具。"
     })
-    response = get_ai_client().chat.completions.create(
-        model=get_ai_model(), messages=messages, temperature=0.1
-    )
-    return response.choices[0].message.content.strip()
+    return _chat_completion(messages)
 
 
 # ── 任务调度器 ────────────────────────────────────────────────────────

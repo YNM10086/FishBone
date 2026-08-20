@@ -38,7 +38,7 @@
 
 AI 会自主拆解任务、依次调用真实 GIS 工具、把结果汇总回传，全程无需手写任何 Python 代码。
 
-**核心设计理念：AI 只负责"决策"，arcpy 由系统在真实 ArcGIS 环境中执行。** 因此本地小模型（如 gemma4）与云端大模型（DeepSeek）都能稳定完成复杂 GIS 操作。
+**核心设计理念：AI 只负责"决策"，arcpy 由系统在真实 ArcGIS 环境中执行。** 因此本地小模型（如 qwen3:8b）与云端大模型（DeepSeek）都能稳定完成复杂 GIS 操作。
 
 ---
 
@@ -58,7 +58,7 @@ AI 会自主拆解任务、依次调用真实 GIS 工具、把结果汇总回传
 | 地图与计算 | 天地图地理编码、POI 检索、带号/中央子午线计算、地形图分幅编号、DAT 修复 |
 
 ### 🧠 AI 双模式，随时切换
-- **本地模式**：Ollama（默认 gemma4:latest），数据不出本机、免费
+- **本地模式**：Ollama（默认 qwen3:8b），数据不出本机、免费
 - **API 模式**：DeepSeek API，云端大模型更强推理
 - 对话页右上角一键滑动切换，配置持久化到本地 `ai_config.json`
 
@@ -181,7 +181,7 @@ TIANDITU_KEY=你的天地图Key
 
 # Ollama 本地模型（可选，内置默认值）
 OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
-OLLAMA_MODEL=gemma4:latest
+OLLAMA_MODEL=qwen3:8b
 ```
 
 > `.env` 已加入 `.gitignore`，**绝不提交**。API Key 也可在首页"AI 模型配置"卡片中运行时填写。
