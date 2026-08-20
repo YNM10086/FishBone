@@ -25,7 +25,8 @@ Thumbs.db
 # Project specific
 .claude/
 .pytest_cache/
-Temp*.py
+# 仅忽略根目录的临时文件（必须锚定 /，否则 Temp*.py 会误伤 app/templates.py）
+/Temp*.py
 
 # Chat history (auto-generated, not for version control)
 _chat_history.json
