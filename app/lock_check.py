@@ -86,9 +86,13 @@ def check_locks(args: dict) -> dict:
     """
     主入口：检查工具参数涉及的 GDB 锁状态
     返回 {"blocked": bool, "alive": list, "cleaned": list, "unknown": list}
-    - alive:   活锁文件（持有进程存活）
-    - cleaned: 已清理的死锁文件
-    - unknown: 读不出 PID 的锁文件（视为需人工确认）
+    - alive:   活锁文件（持有进程存活）——ArcGIS Pro 打开 GDB 浏览属正常现象，
+               锁为共享锁，外部 arcpy 写入通常可成功，故【不拦截】，仅记录
+    - cleaned: 已清理的死锁文件（持有进程已死，残留锁会阻塞 Pro/arcpy）
+    - unknown: 读不出 PID 的锁文件——同样【不拦截】，
+               真实冲突由 runner 的 000464/schema lock 翻译兜底
+    （2026-08-22 调整：原"活锁一律拦截"导致开着 Pro 时所有写操作被误拦，
+     缓冲区/创建要素等无法使用；改为放行 + 死锁清理 + 错误兜底翻译）
     """
     result: dict = {"blocked": False, "alive": [], "cleaned": [], "unknown": []}
 
@@ -97,19 +101,16 @@ def check_locks(args: dict) -> dict:
             pid = _read_pid(lock_file)
             if pid is None:
                 result["unknown"].append(lock_file)
-                result["blocked"] = True
                 continue
             if _is_process_alive(pid):
                 result["alive"].append(lock_file)
-                result["blocked"] = True
                 continue
             # 死锁：持有进程已死，安全清理后放行
             try:
                 os.remove(lock_file)
                 result["cleaned"].append(lock_file)
             except OSError:
-                # 删除失败（文件被占用/权限）→ 保守拦截
+                # 删除失败（文件被占用/权限）→ 记为 unknown，不拦截
                 result["unknown"].append(lock_file)
-                result["blocked"] = True
 
     return result

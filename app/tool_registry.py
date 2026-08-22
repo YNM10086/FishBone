@@ -430,19 +430,16 @@ _WRITE_TOOLS = {
 
 
 def _lock_precheck(name: str, args: dict) -> str | None:
-    """写操作工具执行前的锁检测。返回非 None 时表示拦截/提示，调用方不得执行"""
+    """
+    写操作工具执行前的锁检测（2026-08-22 放宽策略）：
+    - 活锁/未知锁：不再拦截（ArcGIS Pro 打开 GDB 浏览时持有共享锁属正常现象，
+      外部 arcpy 写入通常可成功；真实冲突由 runner 的 000464/schema lock 翻译兜底）
+    - 死锁：自动清理并提示
+    - 返回非 None 时表示"不执行工具、直接返回提示"，当前仅死锁清理会返回提示
+    """
     if name not in _WRITE_TOOLS:
         return None
     result = check_locks(args)
-    if result["blocked"]:
-        if result["unknown"]:
-            msg = (
-                "检测到 ArcGIS 锁文件（无法确认占用进程），"
-                "请确认 ArcGIS 工程已完全关闭后重试"
-            )
-        else:
-            msg = "ArcGIS 已占用数据库，请关闭 ArcGIS 工程后再执行编辑操作"
-        return f'__BLOCK_ALERT__:{{"message": "{msg}"}}'
     if result["cleaned"]:
         return f"已自动清理 {len(result['cleaned'])} 个残留 ArcGIS 锁文件，继续执行。"
     return None
